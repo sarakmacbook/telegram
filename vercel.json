@@ -3,6 +3,7 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "framework": null,
+  "outputDirectory": "public",
   "functions": {
     "api/*.mjs": {
       "includeFiles": "index.html",
