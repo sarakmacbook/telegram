@@ -14,15 +14,21 @@ import { ensureWebhook } from '../src/webhook.mjs';
 
 let appPromise = null;
 const getApp = () => (appPromise ??= createApp({ env: process.env }));
+const hasBotToken = () => [process.env.BOT_TOKEN, process.env.TELEGRAM_BOT_TOKEN]
+  .some((value) => String(value ?? '').trim().length > 0);
 
 export default async function handler(req, res) {
-  const app = await getApp();
   res.setHeader('content-type', 'application/json; charset=utf-8');
   res.setHeader('cache-control', 'no-store');
 
   if ((req.method || '').toUpperCase() !== 'POST') {
     return res.status(405).send(JSON.stringify({ ok: false, error: 'use POST' }));
   }
+  if (!hasBotToken()) {
+    return res.status(503).send(JSON.stringify({ ok: false, error: 'BOT_TOKEN must be configured in Vercel Environment Variables before webhook setup' }));
+  }
+
+  const app = await getApp();
   if (!app.cfg.webhookSecret) {
     return res.status(503).send(JSON.stringify({ ok: false, error: 'WEBHOOK_SECRET must be configured before setup' }));
   }

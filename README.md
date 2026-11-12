@@ -101,6 +101,8 @@ The same codebase exposes Vercel functions at `/api/webhook`, `/api/setup`, and 
 
 4. Check `https://<project>.vercel.app/` for configuration and webhook status. Do not expose or commit your bot token or webhook secret.
 
+If `BOT_TOKEN` is missing, the root URL shows a setup page explaining where to configure it. The page intentionally has no token input; add secrets only in Vercel Project Settings → Environment Variables, then redeploy.
+
 For the `/resend` command to survive Vercel cold starts, set `SHARED_WIDGET_ID` after the first `/live` card has been sent. Without it, `/live` still works; its in-memory ID may simply be forgotten after a cold start.
 
 ## Configuration
