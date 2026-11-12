@@ -1,0 +1,30 @@
+{
+  "name": "okx-p2p-widget-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram bot (Bot API 10.4) that sends the OKX P2P merchant HTML widget with sendWidget, answers widget_query requests and edits widget state.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build-widget.mjs",
+    "check": "node scripts/build-widget.mjs --check",
+    "start": "node src/index.mjs poll",
+    "poll": "node src/index.mjs poll",
+    "webhook": "node src/index.mjs webhook",
+    "dev": "node src/index.mjs dev",
+    "set-webhook": "node src/index.mjs set-webhook",
+    "unset-webhook": "node src/index.mjs unset-webhook",
+    "test": "node --test test/*.test.mjs"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "widget",
+    "sendWidget",
+    "bot-api-10.4",
+    "html"
+  ],
+  "license": "MIT"
+}
