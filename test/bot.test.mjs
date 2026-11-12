@@ -300,6 +300,76 @@ test('the webhook handler checks the secret and acknowledges updates', async () 
   assert.equal(stillOk.status, 200);
 });
 
+test('Vercel status page explains missing BOT_TOKEN without throwing or collecting secrets', async () => {
+  const saved = {
+    BOT_TOKEN: process.env.BOT_TOKEN,
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+  };
+  delete process.env.BOT_TOKEN;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+
+  try {
+    const { default: handler } = await import('../api/index.mjs');
+    const res = {
+      headers: {},
+      setHeader(name, value) { this.headers[name] = value; },
+      status(code) { this.statusCode = code; return this; },
+      send(body) { this.body = body; return this; },
+    };
+    await handler({ method: 'GET' }, res);
+    assert.equal(res.statusCode, 200);
+    assert.match(res.headers['content-type'], /text\/html/);
+    assert.equal(res.headers['cache-control'], 'no-store');
+    assert.match(res.body, /Connect your Telegram bot/);
+    assert.match(res.body, /BOT_TOKEN/);
+    assert.match(res.body, /Vercel.*Environment Variables/s);
+    assert.doesNotMatch(res.body, /createTelegramClient: a bot token is required/);
+    assert.doesNotMatch(res.body, /<form\b|<input\b/i, 'the public setup page must not collect a secret');
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Vercel setup and webhook endpoints report missing BOT_TOKEN without throwing', async () => {
+  const saved = {
+    BOT_TOKEN: process.env.BOT_TOKEN,
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    WEBHOOK_SECRET: process.env.WEBHOOK_SECRET,
+  };
+  delete process.env.BOT_TOKEN;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.WEBHOOK_SECRET;
+
+  const makeResponse = () => ({
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    send(body) { this.body = body; return this; },
+  });
+
+  try {
+    const { default: setup } = await import('../api/setup.mjs');
+    const setupResponse = makeResponse();
+    await setup({ method: 'POST', headers: {}, query: {} }, setupResponse);
+    assert.equal(setupResponse.statusCode, 503);
+    assert.match(JSON.parse(setupResponse.body).error, /BOT_TOKEN/);
+
+    const { default: webhook } = await import('../api/webhook.mjs');
+    const webhookResponse = makeResponse();
+    await webhook({ method: 'POST', headers: {}, body: {} }, webhookResponse);
+    assert.equal(webhookResponse.statusCode, 503);
+    assert.match(JSON.parse(webhookResponse.body).error, /BOT_TOKEN/);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('the Vercel webhook accepts a parsed JSON request body', async () => {
   const saved = {
     BOT_TOKEN: process.env.BOT_TOKEN,

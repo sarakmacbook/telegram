@@ -9,6 +9,8 @@ import { handleTelegramWebhook } from '../src/webhook.mjs';
 const MAX_BODY_BYTES = 1_000_000;
 let appPromise = null;
 const getApp = () => (appPromise ??= createApp({ env: process.env }));
+const hasBotToken = () => [process.env.BOT_TOKEN, process.env.TELEGRAM_BOT_TOKEN]
+  .some((value) => String(value ?? '').trim().length > 0);
 
 async function requestBody(req, res) {
   // Vercel may provide an already-parsed body. Preserve raw strings, and
@@ -40,8 +42,14 @@ async function requestBody(req, res) {
 }
 
 export default async function handler(req, res) {
-  const app = await getApp();
   res.setHeader('cache-control', 'no-store');
+
+  if (!hasBotToken()) {
+    res.setHeader('content-type', 'application/json; charset=utf-8');
+    return res.status(503).send(JSON.stringify({ ok: false, error: 'BOT_TOKEN must be configured in Vercel Environment Variables before webhook processing' }));
+  }
+
+  const app = await getApp();
 
   // Never expose an unauthenticated production webhook by accident. The common
   // local handler still permits an unset secret for localhost/tunnel testing.
