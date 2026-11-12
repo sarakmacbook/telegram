@@ -26,5 +26,8 @@
     "bot-api-10.4",
     "html"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@upstash/redis": "^1.41.0"
+  }
 }

@@ -1,8 +1,9 @@
 /**
  * Configuration + logging.
  *
- * Every value comes from the environment so the same code runs locally
- * (long polling) and on Vercel (serverless webhook).
+ * Values come from the supplied environment. Vercel handlers may resolve
+ * BOT_TOKEN from the encrypted persistent override before loading this config,
+ * while local polling continues to use the process environment.
  */
 
 const DEFAULT_API_ROOT = 'https://api.telegram.org';
