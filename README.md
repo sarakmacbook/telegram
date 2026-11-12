@@ -84,7 +84,7 @@ The widget's **Refresh** button fetches offers and edits its state. Tapping **Vi
 
 The same codebase exposes Vercel functions at `/api/webhook`, `/api/setup`, and `/api/index` (the root `/` rewrites to the status endpoint). Polling is for local/VPS use; Vercel uses the webhook entrypoint.
 
-1. Import this repository into Vercel, using the repository root as the project root. The included `vercel.json` runs `npm run build`, bundles the widget HTML for the serverless functions, and uses `public` as Vercel's required output directory. The build creates that directory; it is intentionally empty because the site routes are handled by the API functions.
+1. Import this repository into Vercel, using the repository root as the project root. The included `vercel.json` runs `npm run build`, bundles the widget HTML for the serverless functions, and uses `public` as its output directory. The build ensures `public/robots.txt` exists so the static output is non-empty; API routes and `/` remain handled by serverless functions.
 2. Add these environment variables to the Vercel project (Production, and Preview if needed):
    - `BOT_TOKEN` — token from @BotFather
    - `WEBHOOK_URL` — the exact public endpoint, e.g. `https://<project>.vercel.app/api/webhook`

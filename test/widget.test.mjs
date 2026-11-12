@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
   WIDGET_LIMITS,
@@ -12,6 +13,13 @@ import {
   clip,
 } from '../src/widget.mjs';
 import { sampleOffers, normalizeOffers } from '../src/feed.mjs';
+
+test('Vercel output directory contains a non-empty crawl policy asset', async () => {
+  const config = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8'));
+  const robots = await readFile(new URL('../public/robots.txt', import.meta.url), 'utf8');
+  assert.equal(config.outputDirectory, 'public');
+  assert.equal(robots, 'User-agent: *\nDisallow: /\n');
+});
 
 test('widget uses the injected TelegramWidget API, not the Mini App script or ready()', async () => {
   const widget = await loadWidgetHtml({ widgetPath: 'index.html' }, true);
