@@ -300,48 +300,64 @@ test('the webhook handler checks the secret and acknowledges updates', async () 
   assert.equal(stillOk.status, 200);
 });
 
-test('Vercel status page explains missing BOT_TOKEN without throwing or collecting secrets', async () => {
-  const saved = {
-    BOT_TOKEN: process.env.BOT_TOKEN,
-    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+test('Vercel root displays a protected bot-token form with storage setup guidance', async () => {
+  const { createIndexHandler } = await import('../api/index.mjs');
+  const handler = createIndexHandler({ env: {} });
+  const res = {
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    send(body) { this.body = body; return this; },
   };
-  delete process.env.BOT_TOKEN;
-  delete process.env.TELEGRAM_BOT_TOKEN;
+  await handler({ method: 'GET' }, res);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.headers['content-type'], /text\/html/);
+  assert.equal(res.headers['cache-control'], 'no-store');
+  assert.match(res.headers['content-security-policy'], /form-action 'self'/);
+  assert.equal(res.headers['x-robots-tag'], 'noindex, nofollow');
+  assert.match(res.body, /Bot token settings/);
+  assert.match(res.body, /name="botToken" type="password"/);
+  assert.match(res.body, /name="setupPassword" type="password"/);
+  assert.match(res.body, /action="\/api\/token"/);
+  assert.match(res.body, /KV_REST_API_URL/);
+  assert.match(res.body, /BOT_TOKEN_SETUP_PASSWORD/);
+  assert.match(res.body, /<form[^>]*>/);
+  assert.match(res.body, /<button[^>]*disabled/);
+  assert.doesNotMatch(res.body, /createTelegramClient: a bot token is required/);
+});
 
-  try {
-    const { default: handler } = await import('../api/index.mjs');
-    const res = {
-      headers: {},
-      setHeader(name, value) { this.headers[name] = value; },
-      status(code) { this.statusCode = code; return this; },
-      send(body) { this.body = body; return this; },
-    };
-    await handler({ method: 'GET' }, res);
-    assert.equal(res.statusCode, 200);
-    assert.match(res.headers['content-type'], /text\/html/);
-    assert.equal(res.headers['cache-control'], 'no-store');
-    assert.match(res.body, /Connect your Telegram bot/);
-    assert.match(res.body, /BOT_TOKEN/);
-    assert.match(res.body, /Vercel.*Environment Variables/s);
-    assert.doesNotMatch(res.body, /createTelegramClient: a bot token is required/);
-    assert.doesNotMatch(res.body, /<form\b|<input\b/i, 'the public setup page must not collect a secret');
-  } finally {
-    for (const [key, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  }
+test('Vercel root enables token input only after store and admin secrets are configured', async () => {
+  const { createIndexHandler } = await import('../api/index.mjs');
+  const handler = createIndexHandler({
+    env: {
+      KV_REST_API_URL: 'https://redis.example.test',
+      KV_REST_API_TOKEN: 'private-store-credential',
+      BOT_TOKEN_STORE_KEY: 'e'.repeat(64),
+      BOT_TOKEN_SETUP_PASSWORD: 'p'.repeat(64),
+    },
+    readToken: async () => null,
+  });
+  const res = {
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    send(body) { this.body = body; return this; },
+  };
+  await handler({ method: 'GET' }, res);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /name="botToken"[^>]*required>/);
+  assert.doesNotMatch(res.body, /name="botToken"[^>]*disabled/);
+  assert.doesNotMatch(res.body, /private-store-credential|e{20}|p{20}/);
 });
 
 test('Vercel setup and webhook endpoints report missing BOT_TOKEN without throwing', async () => {
-  const saved = {
-    BOT_TOKEN: process.env.BOT_TOKEN,
-    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
-    WEBHOOK_SECRET: process.env.WEBHOOK_SECRET,
-  };
-  delete process.env.BOT_TOKEN;
-  delete process.env.TELEGRAM_BOT_TOKEN;
-  delete process.env.WEBHOOK_SECRET;
+  const envKeys = [
+    'BOT_TOKEN', 'TELEGRAM_BOT_TOKEN', 'WEBHOOK_SECRET',
+    'KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN',
+    'BOT_TOKEN_STORE_KEY', 'BOT_TOKEN_SETUP_PASSWORD',
+  ];
+  const saved = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  for (const key of envKeys) delete process.env[key];
 
   const makeResponse = () => ({
     headers: {},
@@ -351,15 +367,24 @@ test('Vercel setup and webhook endpoints report missing BOT_TOKEN without throwi
   });
 
   try {
+    process.env.WEBHOOK_SECRET = 'test-secret';
     const { default: setup } = await import('../api/setup.mjs');
     const setupResponse = makeResponse();
-    await setup({ method: 'POST', headers: {}, query: {} }, setupResponse);
+    await setup({
+      method: 'POST',
+      headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+      query: {},
+    }, setupResponse);
     assert.equal(setupResponse.statusCode, 503);
     assert.match(JSON.parse(setupResponse.body).error, /BOT_TOKEN/);
 
     const { default: webhook } = await import('../api/webhook.mjs');
     const webhookResponse = makeResponse();
-    await webhook({ method: 'POST', headers: {}, body: {} }, webhookResponse);
+    await webhook({
+      method: 'POST',
+      headers: { 'x-telegram-bot-api-secret-token': 'test-secret' },
+      body: {},
+    }, webhookResponse);
     assert.equal(webhookResponse.statusCode, 503);
     assert.match(JSON.parse(webhookResponse.body).error, /BOT_TOKEN/);
   } finally {

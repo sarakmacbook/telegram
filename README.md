@@ -1,6 +1,6 @@
 # Telegram HTML widget bot
 
-A zero-dependency Node.js bot that sends the repository's `index.html` as a Telegram Bot API **10.4** widget with `sendWidget`. The card displays OKX P2P merchant offers, and its buttons send `refresh` or `offer:<id>` requests to the bot through `TelegramWidget.request()`.
+A Node.js bot that sends the repository's `index.html` as a Telegram Bot API **10.4** widget with `sendWidget`. The card displays OKX P2P merchant offers, and its buttons send `refresh` or `offer:<id>` requests to the bot through `TelegramWidget.request()`. Vercel's password-protected token-settings form uses Upstash Redis for encrypted, persistent token storage.
 
 The widget itself has no network access. The bot supplies offers in `chat_data` (private card) or `public_data` (shared `/live` card), answers each widget query, and edits the widget data to repaint the card. This project does **not** execute trades and is not affiliated with OKX.
 
@@ -82,34 +82,35 @@ The widget's **Refresh** button fetches offers and edits its state. Tapping **Vi
 
 ## Deploy to Vercel (webhook mode)
 
-The same codebase exposes Vercel functions at `/api/webhook`, `/api/setup`, and `/api/index` (the root `/` rewrites to the status endpoint). Polling is for local/VPS use; Vercel uses the webhook entrypoint.
+The Vercel app exposes `/` as the bot-token settings page with a password-protected form, `/api/token` to save a token, `/api/status` for JSON status, `/api/setup` to register the webhook, and `/api/webhook` for Telegram updates. Polling is for local/VPS use; Vercel uses the webhook entrypoint.
 
 1. Import this repository into Vercel, using the repository root as the project root. The included `vercel.json` runs `npm run build`, bundles the widget HTML for the serverless functions, and uses `public` as its output directory. The build ensures `public/robots.txt` exists so the static output is non-empty; API routes and `/` remain handled by serverless functions.
-2. Add these environment variables to the Vercel project (Production, and Preview if needed):
-   - `BOT_TOKEN` — token from @BotFather
-   - `WEBHOOK_URL` — the exact public endpoint, e.g. `https://<project>.vercel.app/api/webhook`
-   - `WEBHOOK_SECRET` — a random 1–256 character string using only letters, digits, `_` or `-` (for example, generate one with `openssl rand -hex 32`)
-   - Optional: `FEED_URL`, `MAX_OFFERS`, `SHARED_CACHE_TIME`
-3. Deploy. Register the webhook once, passing the same secret in the request header:
+2. To enable token entry in the web UI, create/attach a Redis database through Vercel Marketplace (Upstash Redis is supported). Add the database's REST URL and token to Vercel as `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` (or the legacy `KV_REST_API_URL` and `KV_REST_API_TOKEN`). Also add two separate random secrets:
+   - `BOT_TOKEN_STORE_KEY` — encryption key; generate with `openssl rand -hex 32`
+   - `BOT_TOKEN_SETUP_PASSWORD` — admin password for changing the token; generate separately with `openssl rand -hex 32`
+
+   Choose Production (and Preview if needed), then redeploy. The form remains locked until the storage credentials and both secrets are present. The Redis value is encrypted with AES-256-GCM. Keep both secrets private and do not rotate `BOT_TOKEN_STORE_KEY` without migrating the saved token.
+3. Open `https://<project>.vercel.app/` and enter the Telegram bot token and setup password. The encrypted saved value takes precedence over `BOT_TOKEN` / `TELEGRAM_BOT_TOKEN` environment variables for all Vercel functions, and can be replaced from the same page without redeploying. The token is never rendered back to the browser. `BOT_TOKEN` can remain as a fallback or be omitted.
+4. Set `WEBHOOK_URL` to `https://<project>.vercel.app/api/webhook` and `WEBHOOK_SECRET` to a private 1–256 character value using only letters, digits, `_` or `-` (for example, generate it with `openssl rand -hex 32`). Register the webhook once, passing the same secret in the request header:
 
    ```sh
    curl -X POST 'https://<project>.vercel.app/api/setup' \
      -H "x-telegram-bot-api-secret-token: $WEBHOOK_SECRET"
    ```
 
-   `/api/setup` calls Telegram `setWebhook` with `widget_query` and `shared_widget_query` in `allowed_updates`. The webhook handler rejects requests with a missing or incorrect secret and acknowledges valid updates so Telegram does not replay them indefinitely.
+   `/api/setup` calls Telegram `setWebhook` with `widget_query` and `shared_widget_query` in `allowed_updates`. If you replace the token with one for a different bot, register the webhook for that bot too. The webhook handler rejects requests with a missing or incorrect secret and acknowledges valid updates so Telegram does not replay them indefinitely.
 
-4. Check `https://<project>.vercel.app/` for configuration and webhook status. Do not expose or commit your bot token or webhook secret.
-
-If `BOT_TOKEN` is missing, the root URL shows a setup page explaining where to configure it. The page intentionally has no token input; add secrets only in Vercel Project Settings → Environment Variables, then redeploy.
-
-For the `/resend` command to survive Vercel cold starts, set `SHARED_WIDGET_ID` after the first `/live` card has been sent. Without it, `/live` still works; its in-memory ID may simply be forgotten after a cold start.
+`/api/status` reports configuration and webhook status. Do not expose or commit your bot token, setup password, encryption key, or webhook secret. For the `/resend` command to survive Vercel cold starts, set `SHARED_WIDGET_ID` after the first `/live` card has been sent.
 
 ## Configuration
 
 See [`.env.example`](.env.example) for all settings. Local commands load `.env` and `.env.local`; Vercel reads project environment variables.
 
-- `BOT_TOKEN` — required for real polling/webhook operation
+- `BOT_TOKEN` / `TELEGRAM_BOT_TOKEN` — optional Vercel fallback; the encrypted token saved from `/` takes precedence. Required for local polling unless supplied directly in the environment.
+- `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (or `KV_REST_API_URL` / `KV_REST_API_TOKEN`) — persistent storage for the Vercel token settings page
+- `BOT_TOKEN_STORE_KEY` — random encryption key for the saved token; do not rotate without migrating it
+- `BOT_TOKEN_SETUP_PASSWORD` — admin password required to save or replace the token
+- `BOT_TOKEN_STORE_NAMESPACE` — optional Redis-key namespace, default `okx-p2p-widget-bot`
 - `WIDGET_PATH` — widget source, default `index.html`
 - `MAX_OFFERS` — max offers per card, default 3
 - `WIDGET_WIDTH` / `WIDGET_HEIGHT` — optional logical dimensions

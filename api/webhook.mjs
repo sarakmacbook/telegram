@@ -4,12 +4,11 @@
  */
 
 import { createApp } from '../src/app.mjs';
+import { resolveTokenEnvironment } from '../src/token-store.mjs';
 import { handleTelegramWebhook } from '../src/webhook.mjs';
 
 const MAX_BODY_BYTES = 1_000_000;
-let appPromise = null;
-const getApp = () => (appPromise ??= createApp({ env: process.env }));
-const hasBotToken = () => [process.env.BOT_TOKEN, process.env.TELEGRAM_BOT_TOKEN]
+const hasBotToken = (env) => [env.BOT_TOKEN, env.TELEGRAM_BOT_TOKEN]
   .some((value) => String(value ?? '').trim().length > 0);
 
 async function requestBody(req, res) {
@@ -44,20 +43,37 @@ async function requestBody(req, res) {
 export default async function handler(req, res) {
   res.setHeader('cache-control', 'no-store');
 
-  if (!hasBotToken()) {
-    res.setHeader('content-type', 'application/json; charset=utf-8');
-    return res.status(503).send(JSON.stringify({ ok: false, error: 'BOT_TOKEN must be configured in Vercel Environment Variables before webhook processing' }));
+  const method = (req.method || 'GET').toUpperCase();
+  if (method !== 'POST') {
+    res.setHeader('content-type', 'text/plain; charset=utf-8');
+    return res.status(405).send('POST an Update to /api/webhook');
   }
-
-  const app = await getApp();
-
-  // Never expose an unauthenticated production webhook by accident. The common
-  // local handler still permits an unset secret for localhost/tunnel testing.
-  if ((req.method || '').toUpperCase() === 'POST' && !app.cfg.webhookSecret) {
+  const expectedSecret = String(process.env.WEBHOOK_SECRET || '').trim();
+  if (!expectedSecret) {
     res.setHeader('content-type', 'application/json; charset=utf-8');
     return res.status(503).send(JSON.stringify({ ok: false, error: 'WEBHOOK_SECRET must be configured' }));
   }
+  if (req.headers?.['x-telegram-bot-api-secret-token'] !== expectedSecret) {
+    res.setHeader('content-type', 'text/plain; charset=utf-8');
+    return res.status(403).send('Forbidden');
+  }
 
+  let env;
+  try {
+    env = await resolveTokenEnvironment(process.env);
+  } catch {
+    res.setHeader('content-type', 'application/json; charset=utf-8');
+    return res.status(503).send(JSON.stringify({ ok: false, error: 'bot token storage is unavailable or misconfigured' }));
+  }
+  if (!hasBotToken(env)) {
+    res.setHeader('content-type', 'application/json; charset=utf-8');
+    return res.status(503).send(JSON.stringify({ ok: false, error: 'BOT_TOKEN must be configured in Vercel or saved from the settings page before webhook processing' }));
+  }
+
+  const app = await createApp({ env });
+
+  // Check the body after authenticating to avoid spending Redis/API work on
+  // unauthenticated public webhook requests.
   const body = await requestBody(req, res);
   if (body === null) return;
 
